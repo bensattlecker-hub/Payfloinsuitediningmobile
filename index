@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <title>Sovereign Royal Suites - In-Suite Dining</title>
+  <meta name="description" content="Order In-Suite Dining directly from your phone — Sovereign Royal Suites">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0E0E0E">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sovereign Dining">
+  <link rel="icon" type="image/png" sizes="192x192" href="/s-logo.png">
+  <link rel="apple-touch-icon" href="/s-logo.png">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    if (window.tailwind) {
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                gold: '#BC955C',
+                goldHover: '#A7824B',
+                goldLight: '#FDF9F1',
+                goldBorder: '#E5D6BD',
+                dark: '#141414',
+                charcoal: '#1E1E1E',
+                cream: '#FAF8F5',
+              }
+            },
+            fontFamily: {
+              sans: ['Montserrat', 'system-ui', 'sans-serif'],
+              serif: ['Playfair Display', 'Georgia', 'serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            }
+          }
+        }
+      };
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Real-Time Cloud IoT WebSocket Relay (same channel the In-Room TV uses, so a phone gets the -->
+  <!-- exact same live check-in / reset events as the suite's TV, even though it's a different device) -->
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background-color: #0E0E0E;
+      color: #E6E6E6;
+      font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .touch-btn {
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+      cursor: pointer;
+    }
+    .touch-btn:active {
+      transform: scale(0.97);
+    }
+    @keyframes cartPop {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.25); }
+      100% { transform: scale(1); }
+    }
+    .cart-pop-anim {
+      animation: cartPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .app-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: #BC955C #222222;
+    }
+    .app-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .app-scroll::-webkit-scrollbar-thumb {
+      background: #BC955C;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="bg-[#0E0E0E] text-[#E0E0E0] antialiased min-h-screen flex flex-col">
+
+  <!-- ========================================================================= -->
+  <!-- BRAND HEADER (simplified — no TV admin controls: no Reset Demo, no screen -->
+  <!-- selector badge. Just logo, brand name, and this suite's dining status.)   -->
+  <!-- ========================================================================= -->
+  <header class="bg-[#181818] border-b border-[#2C2C2C] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md sticky top-0 z-30">
+    <div class="flex items-center space-x-3 min-w-0">
+      <div class="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-[#BC955C] to-[#8C6D3B] rounded-sm p-0.5 shadow-lg flex items-center justify-center shrink-0">
+        <div class="w-full h-full bg-[#181818] flex items-center justify-center border border-[#BC955C]/40">
+          <span class="text-[#BC955C] font-serif font-bold text-xl sm:text-2xl">S</span>
+        </div>
+      </div>
+      <div class="min-w-0">
+        <h1 class="text-sm sm:text-lg lg:text-xl font-serif text-white tracking-[0.1em] uppercase truncate">
+          SOVEREIGN ROYAL <span class="text-[#BC955C] font-normal">SUITES</span>
+        </h1>
+        <p class="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-gray-400 truncate">Suite <span id="header-suite-num">402</span> • In-Suite Dining</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-1.5 bg-black/60 px-2.5 sm:px-3.5 py-1.5 rounded-full border border-white/10 text-[10px] sm:text-[11px] font-mono shrink-0">
+      <span id="header-status-dot" class="w-2 h-2 rounded-full bg-gray-500 shrink-0"></span>
+      <span id="header-status-text" class="hidden xs:inline sm:inline">Connecting…</span>
+    </div>
+  </header>
+
+  <main class="flex-1 flex flex-col w-full max-w-3xl mx-auto px-4 sm:px-6 py-6 app-scroll">
+
+    <!-- ========================================================================= -->
+    <!-- MODE A: SUITE BELUM CHECK-IN (tidak ada QR di sini — QR hanya di TV)      -->
+    <!-- ========================================================================= -->
+    <div id="dining-mode-standby" class="flex-1 flex flex-col items-center justify-center text-center space-y-5 py-14">
+      <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#BC955C]/15 border border-[#BC955C]/40 flex items-center justify-center">
+        <i data-lucide="bell" class="w-7 h-7 sm:w-8 sm:h-8 text-[#BC955C]"></i>
+      </div>
+      <div class="max-w-md space-y-2">
+        <h2 class="text-xl sm:text-2xl lg:text-3xl font-serif text-white">Awaiting Check-In</h2>
+        <p class="text-sm text-gray-400 leading-relaxed">
+          Suite <span id="standby-suite-num" class="text-gray-200 font-semibold">402</span> is still awaiting check-in at the lobby kiosk. The In-Suite Dining menu will activate automatically the moment check-in is complete.
+        </p>
+      </div>
+      <div class="flex items-center space-x-2 text-xs text-gray-500 pt-2">
+        <div class="w-3.5 h-3.5 border-2 border-gray-600 border-t-[#BC955C] rounded-full animate-spin"></div>
+        <span>Listening for check-in…</span>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- MODE B: SUITE SUDAH CHECK-IN — LANGSUNG MENU DINING (sama seperti TV)    -->
+    <!-- ========================================================================= -->
+    <div id="dining-mode-active" class="hidden flex-1 flex flex-col justify-between space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 class="text-xl sm:text-2xl font-serif text-white font-medium">In-Suite Dining</h3>
+          <p class="text-sm text-gray-400" id="dining-service-desc">Curated in-suite dining. Add selections to your suite order for direct delivery to your suite.</p>
+        </div>
+
+        <!-- Controls: Refresh Menu & Cart Trigger -->
+        <div class="flex items-center space-x-3">
+          <button onclick="fetchDemoDiningMenu(true)" id="btn-refresh-dining-menu" class="touch-btn bg-[#1A1A1A] hover:bg-[#252525] border border-gray-700 hover:border-[#BC955C] text-gray-300 hover:text-white px-3.5 py-2.5 rounded-full text-xs flex items-center space-x-2 transition shadow-md cursor-pointer">
+            <i data-lucide="refresh-cw" id="icon-refresh-menu" class="w-3.5 h-3.5 text-[#BC955C]"></i>
+            <span class="hidden sm:inline">Refresh Menu</span>
+          </button>
+
+          <!-- Floating Quick Cart Trigger Badge -->
+          <button onclick="openCartModal()" id="dining-cart-pill-btn" class="self-start sm:self-auto bg-[#1A1A1A] hover:bg-[#252525] border border-[#BC955C]/60 text-white px-4 py-2.5 rounded-full flex items-center space-x-3 transition shadow-lg group cursor-pointer">
+            <div class="relative">
+              <i data-lucide="shopping-bag" class="w-4 h-4 text-[#BC955C] group-hover:scale-110 transition-transform"></i>
+              <span id="cart-badge-count" class="absolute -top-2 -right-2 bg-[#BC955C] text-black text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">0</span>
+            </div>
+            <div class="text-xs">
+              <span class="text-gray-300 font-medium">Cart: </span>
+              <span id="cart-badge-total" class="font-mono font-bold text-[#BC955C]">$0.00 AUD</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div id="dining-menu-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 flex-1">
+        <!-- Loading Skeleton & Dynamic Menu Container -->
+        <div class="col-span-full py-20 flex flex-col items-center justify-center space-y-4 text-center">
+          <div class="w-10 h-10 border-2 border-[#BC955C] border-t-transparent rounded-full animate-spin"></div>
+          <div class="text-white font-serif text-base font-medium">Connecting to In-Suite Dining Menu API...</div>
+          <div class="text-xs text-gray-400 font-mono">Loading In-Suite Dining Menu (GET /order/samsung)</div>
+        </div>
+      </div>
+
+      <!-- Bottom Floating Cart Strip -->
+      <div id="dining-cart-strip" class="bg-gradient-to-r from-[#1E1E1E] to-[#141414] border border-[#BC955C]/40 p-4 rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xl transition-all sticky bottom-3">
+        <div class="flex items-center space-x-4">
+          <div class="w-10 h-10 rounded-full bg-[#BC955C]/20 border border-[#BC955C] flex items-center justify-center shrink-0">
+            <i data-lucide="shopping-bag" class="w-5 h-5 text-[#BC955C]"></i>
+          </div>
+          <div>
+            <div class="text-white text-sm font-semibold flex items-center space-x-2">
+              <span>Your Suite Cart</span>
+              <span id="strip-cart-count-badge" class="bg-[#BC955C] text-black font-bold text-[10px] px-2 py-0.5 rounded-full">0 items</span>
+            </div>
+            <div class="text-xs text-gray-400">Direct In-Suite Service by Floor Butler</div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between sm:justify-end space-x-4">
+          <div class="text-right">
+            <div class="text-[11px] text-gray-400 uppercase">Subtotal</div>
+            <div id="strip-cart-total-text" class="text-base sm:text-lg font-mono font-bold text-[#BC955C]">$0.00 AUD</div>
+          </div>
+          <button onclick="openCartModal()" class="touch-btn bg-[#BC955C] hover:bg-[#CDA56B] text-black font-bold px-6 py-3 rounded-sm text-xs uppercase tracking-wider shadow-lg flex items-center space-x-2 transition">
+            <span>View Order &amp; Checkout</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- TOAST NOTIFICATION                                                        -->
+  <!-- ========================================================================= -->
+  <div id="tv-toast" class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-8 sm:bottom-8 z-50 bg-[#1A1A1A] border-2 border-[#BC955C] text-white px-5 py-3.5 rounded shadow-2xl text-xs flex items-center space-x-3 transition-all transform translate-y-24 opacity-0 pointer-events-none">
+    <i data-lucide="bell" class="w-4 h-4 text-[#BC955C] shrink-0"></i>
+    <span id="tv-toast-msg">Notification</span>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: IN-SUITE DINING CART & CHECKOUT                                     -->
+  <!-- ========================================================================= -->
+  <div id="modal-dining-cart" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div class="bg-[#181818] border border-[#BC955C]/60 rounded-sm w-full max-w-md sm:max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+
+      <!-- Modal Header -->
+      <div class="px-4 sm:px-6 py-4 border-b border-gray-800 flex items-center justify-between bg-black/40">
+        <div class="flex items-center space-x-3">
+          <div class="w-8 h-8 rounded-full bg-[#BC955C]/20 border border-[#BC955C] flex items-center justify-center shrink-0">
+            <i data-lucide="shopping-bag" class="w-4 h-4 text-[#BC955C]"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-serif font-semibold text-white">In-Suite Gastronomy Order</h3>
+            <p class="text-[11px] text-gray-400">Suite <span id="cart-header-suite-num">402</span> • Michelin Kitchen Direct</p>
+          </div>
+        </div>
+        <button onclick="closeCartModal()" class="text-gray-400 hover:text-white p-1.5 rounded-sm hover:bg-white/10 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body (Items List) -->
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 app-scroll">
+        <!-- Error Alert Banner -->
+        <div id="cart-order-error" class="hidden text-xs text-red-300 bg-red-950/70 border border-red-500/50 p-3 rounded-sm flex items-center space-x-2.5 shadow-md">
+          <i data-lucide="alert-circle" class="w-4 h-4 text-red-400 shrink-0"></i>
+          <span id="cart-order-error-text" class="flex-1 font-medium"></span>
+        </div>
+
+        <div id="cart-items-container" class="space-y-3">
+          <!-- Populated by JS -->
+        </div>
+
+        <div id="cart-empty-state" class="hidden text-center py-10 space-y-3">
+          <i data-lucide="utensils" class="w-10 h-10 text-gray-600 mx-auto"></i>
+          <p class="text-sm text-gray-400 font-medium">Your suite dining cart is currently empty.</p>
+          <button onclick="closeCartModal();" class="bg-[#BC955C] text-black font-bold text-xs uppercase px-4 py-2 rounded-sm tracking-wider">
+            Explore Menu
+          </button>
+        </div>
+
+        <!-- Special Instructions -->
+        <div class="pt-3 border-t border-gray-800/80">
+          <label class="block text-[11px] uppercase tracking-wider text-gray-400 font-semibold mb-1.5">
+            Butler / Culinary Notes:
+          </label>
+          <input type="text" id="cart-special-notes" placeholder="e.g. Medium-rare steak, extra ice with champagne, warm blinis..." class="w-full bg-[#101010] border border-gray-700 focus:border-[#BC955C] text-white text-xs px-3.5 py-2.5 rounded-sm outline-none transition" />
+        </div>
+
+        <!-- Delivery ETA estimate -->
+        <div class="bg-black/30 border border-gray-800 p-3 rounded text-xs flex items-center justify-between text-gray-300">
+          <span class="flex items-center space-x-2">
+            <i data-lucide="clock" class="w-4 h-4 text-[#BC955C]"></i>
+            <span>Estimated White-Glove In-Suite Delivery:</span>
+          </span>
+          <span class="font-bold text-white font-mono">20–25 Minutes</span>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-4 sm:px-6 py-4 border-t border-gray-800 bg-black/40 flex items-center justify-between">
+        <div>
+          <div class="text-[11px] text-gray-400 uppercase">Total to Folio:</div>
+          <div id="modal-cart-total" class="text-lg font-mono font-bold text-[#BC955C]">$0.00 AUD</div>
+        </div>
+        <div class="flex items-center space-x-3">
+          <button onclick="closeCartModal()" class="px-4 py-2.5 rounded-sm text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/5 border border-gray-700 transition">
+            Continue
+          </button>
+          <button id="btn-submit-cart-order" onclick="submitDiningCartOrder()" class="touch-btn bg-[#BC955C] hover:bg-[#CDA56B] text-black font-bold px-5 py-2.5 rounded-sm text-xs uppercase tracking-wider flex items-center space-x-2 transition shadow-lg">
+            <i data-lucide="send" class="w-4 h-4"></i>
+            <span>Confirm &amp; Send</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- JAVASCRIPT                                                                -->
+  <!-- ========================================================================= -->
+  <script>
+    // Suite/room context — same convention as the In-Room TV pages (?room= query param)
+    const rawUrlParams = new URLSearchParams(window.location.search);
+    const SUITE_NUMBER = rawUrlParams.get('room') || '402';
+
+    const PMS_BACKEND = (function() {
+      try {
+        if (rawUrlParams.get('backend')) return rawUrlParams.get('backend').replace(/\/+$/, '');
+        return 'https://sovereign-royal-suites.vercel.app';
+      } catch (e) {}
+      return 'https://sovereign-royal-suites.vercel.app';
+    })();
+
+    // Same public Cloud IoT relay topic the In-Room TV subscribes to, so this phone page
+    // gets the identical real-time check-in / reset events even though it's a different device.
+    const IOT_CHANNEL = 'sovereign/sydney/kiosk_01';
+    let mqttClient = null;
+
+    // Pre-fill guest name from the QR's ?guest= param (set by renderDiningQRCode on the TV)
+    // so the checkout note is already correct even before any live PMS event arrives.
+    let guestName = rawUrlParams.get('guest') || 'Guest';
+    let diningCart = [];
+    let isCheckedIn = false;
+    let hasLoadedMenuOnce = false;
+
+    document.getElementById('header-suite-num').textContent = SUITE_NUMBER;
+    document.getElementById('standby-suite-num').textContent = SUITE_NUMBER;
+    document.getElementById('cart-header-suite-num').textContent = SUITE_NUMBER;
+    if (rawUrlParams.get('guest')) {
+      const svcDesc = document.getElementById('dining-service-desc');
+      if (svcDesc) svcDesc.textContent = `Welcome, ${guestName}. Add selections to your suite order for direct delivery to your suite.`;
+    }
+
+    function refreshIcons() {
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+      }
+    }
+    document.addEventListener('DOMContentLoaded', refreshIcons);
+    setTimeout(refreshIcons, 100);
+
+    // Toast
+    function showTVToast(msg) {
+      const toast = document.getElementById('tv-toast');
+      const toastMsg = document.getElementById('tv-toast-msg');
+      if (!toast || !toastMsg) return;
+      toastMsg.textContent = msg;
+      toast.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+      }, 3500);
+    }
+
+    // Audio Arrival Chime (Harmonic Synthesizer)
+    function playArrivalChime() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const freqs = [523.25, 659.25, 783.99, 1046.50];
+        freqs.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
+          gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.12);
+          gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + idx * 0.12 + 0.05);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.12 + 1.2);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + idx * 0.12);
+          osc.stop(ctx.currentTime + idx * 0.12 + 1.3);
+        });
+      } catch (e) {}
+    }
+
+    // Toggle between "awaiting check-in" and "dining menu" — this page has only those 2 states.
+    function setDiningMode(active) {
+      const standby = document.getElementById('dining-mode-standby');
+      const activeEl = document.getElementById('dining-mode-active');
+      const statusDot = document.getElementById('header-status-dot');
+      const statusText = document.getElementById('header-status-text');
+
+      if (active) {
+        if (standby) standby.classList.add('hidden');
+        if (activeEl) activeEl.classList.remove('hidden');
+        if (statusDot) statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+        if (statusText) statusText.textContent = 'Checked In';
+        if (!hasLoadedMenuOnce) {
+          hasLoadedMenuOnce = true;
+          fetchDemoDiningMenu();
+        }
+      } else {
+        if (standby) standby.classList.remove('hidden');
+        if (activeEl) activeEl.classList.add('hidden');
+        if (statusDot) statusDot.className = 'w-2 h-2 rounded-full bg-gray-500 shrink-0';
+        if (statusText) statusText.textContent = 'Awaiting Check-In';
+      }
+      isCheckedIn = active;
+    }
+
+    // Simplified version of the TV's applyPMSCheckinState — this page only needs to know
+    // whether the suite is checked in or not, it doesn't show guest/VIP/temperature info.
+    function applyPMSCheckinState(data) {
+      if (!data) return;
+      const targetRoom = String(data.roomNumber || data.suiteNumber || '');
+      if (targetRoom && targetRoom !== String(SUITE_NUMBER)) return;
+
+      const wasCheckedIn = isCheckedIn;
+      const isNowActive = data.isCheckedIn !== false;
+      if (data.guestName) guestName = data.guestName;
+
+      setDiningMode(isNowActive);
+
+      if (isNowActive && !wasCheckedIn) {
+        showTVToast(`Welcome${data.guestName ? ', ' + data.guestName : ''}! Suite ${SUITE_NUMBER} dining menu is now active.`);
+      }
+    }
+
+    // One-shot check of current status on load (the phone opens the page well after the TV
+    // did, so it can't rely only on future push events — it needs to know the state right now).
+    async function pollPMSStatus() {
+      try {
+        const response = await fetch(`${PMS_BACKEND}/api/pms/room/${SUITE_NUMBER}/status`);
+        const data = await response.json();
+        if (!data || !data.success) return;
+        applyPMSCheckinState(data);
+      } catch (err) {
+        // Keep showing standby state if the backend can't be reached yet
+      }
+    }
+
+    function initCloudRelay() {
+      try {
+        if (typeof mqtt !== 'undefined') {
+          mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+            clientId: 'lynk_dining_' + Math.random().toString(16).substring(2, 8),
+            clean: true,
+            reconnectPeriod: 2500,
+            connectTimeout: 5000
+          });
+
+          mqttClient.on('connect', () => {
+            console.log('[In-Suite Dining] Connected to Cloud IoT Relay for Room', SUITE_NUMBER);
+            mqttClient.subscribe(`${IOT_CHANNEL}/card_encoded`);
+            mqttClient.subscribe(`${IOT_CHANNEL}/guest_session`);
+            mqttClient.subscribe(`${IOT_CHANNEL}/tv_activation`);
+            mqttClient.subscribe(`sovereign/sydney/tv/${SUITE_NUMBER}`);
+          });
+
+          mqttClient.on('message', (topic, message) => {
+            try {
+              const data = JSON.parse(message.toString());
+              if (data && (data.type === 'SYSTEM_RESET' || topic.endsWith('/reset') || data.action === 'SYSTEM_RESET')) {
+                const targetRoom = String(data.roomNumber || data.suiteNumber || '');
+                if (!targetRoom || targetRoom === 'ALL' || targetRoom === String(SUITE_NUMBER)) {
+                  applyPMSCheckinState({ isCheckedIn: false, roomNumber: SUITE_NUMBER });
+                }
+              } else if (data && (data.type === 'KIOSK_CHECKIN' || data.type === 'PMS_CHECKIN_FINALIZED' || data.type === 'NFC_ENCODE_SUCCESS') && data.payload) {
+                const payload = data.payload;
+                const targetRoom = String(payload.roomNumber || payload.suiteNumber || '');
+                if (!targetRoom || targetRoom === String(SUITE_NUMBER)) {
+                  applyPMSCheckinState({
+                    isCheckedIn: true,
+                    roomNumber: SUITE_NUMBER,
+                    guestName: payload.guestName,
+                    guestVipTier: payload.vipTier || payload.guestVipTier,
+                  });
+                }
+              }
+            } catch (e) {}
+          });
+        }
+      } catch (e) {}
+    }
+
+    // Same-device fallback sync (BroadcastChannel + localStorage) — fires instantly when this
+    // page happens to be opened on the same device/browser profile as the kiosk (e.g. testing).
+    try {
+      if ('BroadcastChannel' in window) {
+        const pmsChannel = new BroadcastChannel('sovereign_pms_channel');
+        pmsChannel.onmessage = function(event) {
+          if (event.data && (event.data.type === 'SYSTEM_RESET' || event.data.action === 'SYSTEM_RESET' || event.data.action === 'CHECKOUT')) {
+            const targetRoom = String(event.data.roomNumber || '');
+            if (!targetRoom || targetRoom === 'ALL' || targetRoom === String(SUITE_NUMBER)) {
+              applyPMSCheckinState({ isCheckedIn: false, roomNumber: SUITE_NUMBER });
+            }
+          } else if (event.data && (
+            event.data.type === 'PMS_CHECKIN_FINALIZED' ||
+            event.data.type === 'PMS_EVENT' ||
+            event.data.action === 'KIOSK_CHECKIN' ||
+            event.data.type === 'KIOSK_CHECKIN' || event.data.type === 'NFC_ENCODE_SUCCESS'
+          )) {
+            const payload = event.data.payload || event.data;
+            const targetRoom = String(payload.roomNumber || payload.suiteNumber || '');
+            if (!targetRoom || targetRoom === String(SUITE_NUMBER)) {
+              applyPMSCheckinState({
+                isCheckedIn: true,
+                roomNumber: SUITE_NUMBER,
+                guestName: payload.guestName,
+                guestVipTier: payload.guestVipTier || payload.vipTier,
+              });
+            }
+          }
+        };
+      }
+    } catch (e) {}
+
+    window.addEventListener('storage', function(e) {
+      if (e.key === 'sovereign_pms_sync_event' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && (parsed.type === 'SYSTEM_RESET' || parsed.action === 'SYSTEM_RESET')) {
+            const targetRoom = String(parsed.roomNumber || '');
+            if (!targetRoom || targetRoom === 'ALL' || targetRoom === String(SUITE_NUMBER)) {
+              applyPMSCheckinState({ isCheckedIn: false, roomNumber: SUITE_NUMBER });
+            }
+          } else if (parsed) {
+            const payload = parsed.payload || parsed;
+            const targetRoom = String(payload.roomNumber || payload.suiteNumber || '');
+            if (!targetRoom || targetRoom === String(SUITE_NUMBER)) {
+              applyPMSCheckinState(payload);
+            }
+          }
+        } catch (err) {}
+      } else if (e.key === `sovereign_room_${SUITE_NUMBER}_status` && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          applyPMSCheckinState({ isCheckedIn: parsed.status === 'OCCUPIED', roomNumber: SUITE_NUMBER });
+        } catch (err) {}
+      }
+    });
+
+    // =========================================================================
+    // =========================================================================
+    // DEMO RESTAURANT IN-SUITE DINING API INTEGRATION (GET MENU & POST CHECKOUT)
+    // Upstream Routes:
+    // Route::get('/order/{branchSlug}', ...)    -> /api/v1/demo/order/samsung
+    // Route::post('/checkout/{branchSlug}', ...) -> /api/v1/demo/checkout/samsung
+    // Branch: samsung
+    // =========================================================================
+    const DEMO_BRANCH_SLUG = 'samsung';
+    const DEMO_DIRECT_API_URL = 'https://webapi.payflo.com.au/api/v1/demo';
+    let demoMenuItems = [];
+    let demoMenuLoading = false;
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function updateRefreshMenuButton(isLoading) {
+      const btn = document.getElementById('btn-refresh-dining-menu');
+      const icon = document.getElementById('icon-refresh-menu');
+      if (icon) {
+        if (isLoading) icon.classList.add('animate-spin');
+        else icon.classList.remove('animate-spin');
+      }
+      if (btn) btn.disabled = isLoading;
+    }
+
+    async function fetchDemoDiningMenu(forceRefresh = false) {
+      if (demoMenuLoading) return;
+      demoMenuLoading = true;
+      updateRefreshMenuButton(true);
+
+      const grid = document.getElementById('dining-menu-grid');
+      if (grid && (!demoMenuItems || demoMenuItems.length === 0 || forceRefresh)) {
+        grid.innerHTML = `
+          <div class="col-span-full py-16 flex flex-col items-center justify-center space-y-4 text-center animate-pulse">
+            <div class="w-12 h-12 border-3 border-[#BC955C] border-t-transparent rounded-full animate-spin"></div>
+            <div class="text-white font-serif text-lg font-medium">Fetching Live In-Suite Menu...</div>
+            <div class="text-xs text-gray-400 font-mono">In-Suite Dining • Branch: ${escapeHtml(DEMO_BRANCH_SLUG)} • In-Suite Delivery</div>
+          </div>
+        `;
+      }
+
+      let data = null;
+
+      // 1. First attempt: Use application backend proxy
+      try {
+        const proxyRes = await fetch(`/api/v1/demo/order/${DEMO_BRANCH_SLUG}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (proxyRes.ok) {
+          data = await proxyRes.json();
+        }
+      } catch (proxyErr) {
+        console.warn('[Demo Menu API] Proxy fetch error, attempting direct ngrok endpoint...', proxyErr);
+      }
+
+      // 2. Fallback attempt: Direct to ngrok endpoint with skip warning header
+      if (!data || data.status !== 'OK') {
+        try {
+          const directRes = await fetch(`${DEMO_DIRECT_API_URL}/order/${DEMO_BRANCH_SLUG}`, {
+            headers: {
+              'Accept': 'application/json',
+              'ngrok-skip-browser-warning': 'true'
+            }
+          });
+          if (directRes.ok) {
+            data = await directRes.json();
+          }
+        } catch (directErr) {
+          console.error('[Demo Menu API] Direct fetch error:', directErr);
+        }
+      }
+
+      demoMenuLoading = false;
+      updateRefreshMenuButton(false);
+
+      if (data && data.status === 'OK' && data.result && Array.isArray(data.result.menu_)) {
+        demoMenuItems = data.result.menu_;
+        renderDemoDiningMenu(demoMenuItems, data.result);
+      } else {
+        renderDemoDiningError(data?.message || 'Unable to connect to Demo Resto Menu POS.');
+      }
+    }
+
+    function renderDemoDiningMenu(items, resultMeta) {
+      const grid = document.getElementById('dining-menu-grid');
+      if (!grid) return;
+
+      if (!items || items.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full py-16 text-center text-gray-400 space-y-3 bg-[#181818] border border-gray-800 rounded-sm">
+            <i data-lucide="utensils" class="w-10 h-10 mx-auto text-gray-600"></i>
+            <p class="text-sm font-medium">No dishes currently available for in-suite delivery.</p>
+            <button onclick="fetchDemoDiningMenu(true)" class="bg-[#BC955C] text-black text-xs font-bold px-4 py-2 rounded-sm uppercase tracking-wider cursor-pointer">
+              Retry Menu
+            </button>
+          </div>
+        `;
+        refreshIcons();
+        return;
+      }
+
+      grid.innerHTML = items.map((item, idx) => {
+        const priceNum = parseFloat(item.price) || 0;
+        const isGst = item.gst === 1;
+        const imageUrl = item.image_thumbnail_url || item.image_url || 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80';
+        const tagBadge = idx === 0 ? 'Chef Signature' : (idx === 1 ? 'Barista Selection' : 'Guest Favourite');
+
+        return `
+          <div class="bg-[#181818] border border-gray-800 hover:border-[#BC955C]/60 rounded-sm flex flex-col justify-between shadow-xl overflow-hidden group transition-all duration-300">
+            <!-- Thumbnail Image Container -->
+            <div class="relative h-48 overflow-hidden bg-black/60 flex items-center justify-center">
+              <img
+                src="${imageUrl}"
+                alt="${escapeHtml(item.name)}"
+                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                loading="lazy"
+                referrerpolicy="no-referrer"
+                onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80';"
+              />
+              <div class="absolute inset-0 bg-gradient-to-t from-[#181818] via-transparent to-black/60 pointer-events-none"></div>
+
+              <!-- Price Tag -->
+              <div class="absolute top-3 right-3 bg-black/85 backdrop-blur-md border border-[#BC955C]/60 px-3 py-1 rounded text-xs font-mono font-bold text-[#BC955C] shadow-lg">
+                $${priceNum.toFixed(2)} AUD
+              </div>
+
+              <!-- Top Feature Tag -->
+              <div class="absolute top-3 left-3 bg-[#BC955C] text-black px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shadow">
+                ${tagBadge}
+              </div>
+
+              <!-- GST Pill -->
+              ${isGst ? `
+                <div class="absolute bottom-3 left-3 bg-black/80 backdrop-blur-sm border border-gray-700/80 px-2 py-0.5 rounded text-[10px] font-mono text-gray-300">
+                  10% GST Included
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- Card Body & Description -->
+            <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+              <div>
+                <h4 class="text-base font-semibold text-white group-hover:text-[#BC955C] transition-colors leading-snug">
+                  ${escapeHtml(item.name)}
+                </h4>
+                <p class="text-xs text-gray-400 mt-2 leading-relaxed">
+                  ${escapeHtml(item.description || 'Artisan culinary selection freshly prepared by Demo Resto kitchen and served directly to Suite ' + SUITE_NUMBER + '.')}
+                </p>
+              </div>
+
+              <!-- Action Button: Add to Order / Suite Cart -->
+              <div class="pt-3 border-t border-gray-800/80">
+                <button
+                  id="btn-add-cart-${item.id}"
+                  onclick="addDishToCart('${escapeHtml(item.name).replace(/'/g, "\\'")}', ${priceNum}, '${imageUrl}', this, ${item.id}, ${item.gst === 1 ? 1 : 0}, ${typeof item.package === 'number' ? item.package : 0})"
+                  class="touch-btn w-full bg-[#BC955C] hover:bg-[#CDA56B] active:scale-95 text-black font-bold py-3 px-4 rounded-sm text-xs uppercase tracking-wider transition duration-150 flex items-center justify-center space-x-2 shadow-md cursor-pointer"
+                  title="Add to Suite Cart"
+                >
+                  <i data-lucide="plus" class="w-4 h-4"></i>
+                  <span>Add to Order • $${priceNum.toFixed(2)}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      refreshIcons();
+    }
+
+    function renderDemoDiningError(errMsg) {
+      const grid = document.getElementById('dining-menu-grid');
+      if (!grid) return;
+      grid.innerHTML = `
+        <div class="col-span-full py-16 text-center space-y-4 bg-[#181818] border border-red-500/30 rounded-sm p-6">
+          <div class="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 flex items-center justify-center mx-auto text-red-400">
+            <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+          </div>
+          <div class="text-white font-medium text-sm">${escapeHtml(errMsg)}</div>
+          <p class="text-xs text-gray-400 max-w-md mx-auto">Could not connect to Demo Resto API. Please verify server connectivity or retry.</p>
+          <button onclick="fetchDemoDiningMenu(true)" class="touch-btn bg-[#BC955C] hover:bg-[#CDA56B] text-black font-bold text-xs uppercase px-5 py-2.5 rounded-sm tracking-wider cursor-pointer">
+            Retry Menu Connection
+          </button>
+        </div>
+      `;
+      refreshIcons();
+    }
+
+    // =========================================================================
+    // IN-SUITE DINING CART SYSTEM (ANIMATED ADD TO CART)
+    // =========================================================================
+    function addDishToCart(name, price, img, btnEl, id, gst, pkg) {
+      const existing = diningCart.find(item => (id && item.id === id) || item.name === name);
+      if (existing) {
+        existing.quantity += 1;
+        if (id && !existing.id) existing.id = id;
+        if (gst !== undefined) existing.gst = gst;
+        if (pkg !== undefined) existing.package = pkg;
+      } else {
+        diningCart.push({
+          id: id || undefined,
+          name: name,
+          price: price,
+          quantity: 1,
+          image: img,
+          gst: gst !== undefined ? gst : 1,
+          package: pkg || 0
+        });
+      }
+
+      if (btnEl) {
+        const originalHtml = btnEl.innerHTML;
+        btnEl.classList.remove('bg-[#BC955C]', 'hover:bg-[#CDA56B]', 'text-black');
+        btnEl.classList.add('bg-emerald-600', 'text-white', 'scale-95');
+        btnEl.innerHTML = `<i data-lucide="check" class="w-4 h-4 animate-bounce"></i><span>Added to Order!</span>`;
+        refreshIcons();
+
+        setTimeout(() => {
+          btnEl.classList.remove('bg-emerald-600', 'text-white', 'scale-95');
+          btnEl.classList.add('bg-[#BC955C]', 'hover:bg-[#CDA56B]', 'text-black');
+          btnEl.innerHTML = originalHtml;
+          refreshIcons();
+        }, 1200);
+      }
+
+      updateCartUI();
+      showTVToast(`Added "${name}" to Suite Order ✓`);
+    }
+
+    function changeCartItemQty(index, delta) {
+      if (diningCart[index]) {
+        diningCart[index].quantity += delta;
+        if (diningCart[index].quantity <= 0) {
+          diningCart.splice(index, 1);
+        }
+      }
+      updateCartUI();
+      renderCartItems();
+    }
+
+    function updateCartUI() {
+      const totalCount = diningCart.reduce((sum, item) => sum + item.quantity, 0);
+      const totalPrice = diningCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      const pillCount = document.getElementById('cart-badge-count');
+      const pillTotal = document.getElementById('cart-badge-total');
+      const stripCount = document.getElementById('strip-cart-count-badge');
+      const stripTotal = document.getElementById('strip-cart-total-text');
+      const modalTotal = document.getElementById('modal-cart-total');
+
+      const priceStr = `$${totalPrice.toFixed(2)} AUD`;
+
+      if (pillCount) pillCount.textContent = totalCount;
+      if (pillTotal) pillTotal.textContent = priceStr;
+      if (stripCount) stripCount.textContent = `${totalCount} ${totalCount === 1 ? 'item' : 'items'}`;
+      if (stripTotal) stripTotal.textContent = priceStr;
+      if (modalTotal) modalTotal.textContent = priceStr;
+    }
+
+    function openCartModal() {
+      const errBox = document.getElementById('cart-order-error');
+      if (errBox) errBox.classList.add('hidden');
+      renderCartItems();
+      const modal = document.getElementById('modal-dining-cart');
+      if (modal) {
+        modal.classList.remove('hidden');
+        refreshIcons();
+      }
+    }
+
+    function closeCartModal() {
+      const modal = document.getElementById('modal-dining-cart');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function renderCartItems() {
+      const container = document.getElementById('cart-items-container');
+      const emptyState = document.getElementById('cart-empty-state');
+      const submitBtn = document.getElementById('btn-submit-cart-order');
+      if (!container || !emptyState) return;
+
+      if (diningCart.length === 0) {
+        container.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        if (submitBtn) submitBtn.disabled = true;
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      if (submitBtn) submitBtn.disabled = false;
+
+      container.innerHTML = diningCart.map((item, idx) => `
+        <div class="flex items-center justify-between bg-black/40 border border-gray-800 p-3 rounded-sm">
+          <div class="flex items-center space-x-3">
+            <img src="${item.image}" alt="${item.name}" class="w-12 h-12 rounded object-cover border border-gray-700 shrink-0" />
+            <div>
+              <h5 class="text-xs font-semibold text-white">${item.name}</h5>
+              <div class="text-[11px] font-mono text-[#BC955C]">$${item.price.toFixed(2)} AUD each</div>
+            </div>
+          </div>
+          <div class="flex items-center space-x-3">
+            <div class="flex items-center border border-gray-700 rounded bg-[#101010]">
+              <button onclick="changeCartItemQty(${idx}, -1)" class="px-2 py-1 text-gray-400 hover:text-white font-bold text-xs">-</button>
+              <span class="px-2.5 py-1 text-xs font-mono font-bold text-white">${item.quantity}</span>
+              <button onclick="changeCartItemQty(${idx}, 1)" class="px-2 py-1 text-gray-400 hover:text-white font-bold text-xs">+</button>
+            </div>
+            <div class="w-16 text-right font-mono text-xs font-bold text-white">
+              $${(item.price * item.quantity).toFixed(2)}
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      refreshIcons();
+    }
+
+    async function submitDiningCartOrder() {
+      if (diningCart.length === 0) return;
+      const submitBtn = document.getElementById('btn-submit-cart-order');
+      const errBox = document.getElementById('cart-order-error');
+      const errText = document.getElementById('cart-order-error-text');
+      const originalHtml = submitBtn ? submitBtn.innerHTML : '';
+
+      if (errBox) errBox.classList.add('hidden');
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `
+          <div class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+          <span>Placing Order via POS API...</span>
+        `;
+      }
+
+      const knownMenuIds = {
+        'Deluxe Beef Burger': 53678,
+        'Espresso': 53658,
+        'Halal Snack Pack': 53680
+      };
+
+      const ticketItems = diningCart.map(item => {
+        const found = (demoMenuItems || []).find(m => m.id === item.id || m.name === item.name);
+        const fk_menu = Number(item.id || (found && found.id) || knownMenuIds[item.name] || 53678);
+        const qty = Number(item.quantity) || 1;
+        const menu_price = Number(parseFloat(item.price).toFixed(2));
+        const isGst = (item.gst !== undefined ? (item.gst === 1 || item.gst === 0.1) : (found ? found.gst === 1 : true));
+        const menu_gst = isGst ? 0.1 : 0;
+        const menu_package = Number(item.package || (found && found.package) || 0);
+        const choice_total = 0;
+        const choice_gst = 0;
+        const subtotal = Number((menu_price * qty).toFixed(2));
+        const discount = 0;
+        const grand_total = Number((subtotal - discount).toFixed(2));
+        const gst = isGst ? Number((grand_total * 0.1 / 1.1).toFixed(2)) : 0;
+
+        return {
+          fk_menu: fk_menu,
+          qty: qty,
+          menu_name: item.name,
+          menu_price: menu_price,
+          menu_gst: menu_gst,
+          menu_package: menu_package,
+          choice_total: choice_total,
+          choice_gst: choice_gst,
+          subtotal: subtotal,
+          discount: discount,
+          grand_total: grand_total,
+          gst: gst,
+          note: item.note || ''
+        };
+      });
+
+      const payload = {
+        branchSlug: DEMO_BRANCH_SLUG,
+        room_type: String(SUITE_NUMBER || '402'),
+        guest_name: String(guestName || 'Guest'),
+        note: `Room ${SUITE_NUMBER || '402'} - ${guestName || 'Guest'} (Mobile Order)`,
+        ticketItem_: ticketItems
+      };
+
+      async function attemptCheckoutOnce() {
+        let response = null;
+        let data = null;
+        let networkErrorMessage = null;
+        let networkLevelFailure = false;
+
+        // 1. Try local proxy endpoint first
+        try {
+          response = await fetch(`/api/v1/demo/checkout/${DEMO_BRANCH_SLUG}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+          if (response.ok) {
+            data = await response.json();
+          } else {
+            try {
+              const errPayload = await response.json();
+              networkErrorMessage = errPayload?.message || `Checkout rejected (HTTP ${response.status})`;
+            } catch(e) {
+              networkErrorMessage = `Checkout rejected (HTTP ${response.status})`;
+            }
+          }
+        } catch (proxyErr) {
+          console.warn('[Demo Checkout] Local proxy failed, attempting direct endpoint...', proxyErr);
+          networkErrorMessage = proxyErr.message || 'Local proxy network error';
+          networkLevelFailure = true;
+        }
+
+        // 2. Direct endpoint fallback if local proxy failed or returned non-OK status
+        if (!data || data.status !== 'OK') {
+          try {
+            response = await fetch(`${DEMO_DIRECT_API_URL}/checkout/${DEMO_BRANCH_SLUG}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+              },
+              body: JSON.stringify(payload)
+            });
+            if (response.ok) {
+              data = await response.json();
+              networkErrorMessage = null;
+            } else {
+              try {
+                const errPayload = await response.json();
+                networkErrorMessage = errPayload?.message || `POS server returned status ${response.status}`;
+              } catch(e) {
+                networkErrorMessage = `POS server returned status ${response.status}`;
+              }
+            }
+          } catch (directErr) {
+            console.error('[Demo Checkout] Direct endpoint connection error:', directErr);
+            networkErrorMessage = directErr.message || 'Direct connection to checkout server failed';
+            networkLevelFailure = true;
+          }
+        }
+
+        return { data, networkErrorMessage, networkLevelFailure };
+      }
+
+      try {
+        let { data, networkErrorMessage, networkLevelFailure } = await attemptCheckoutOnce();
+
+        // Cold-start hiccup: the first request to the proxy/POS tunnel sometimes drops with
+        // a raw network error ("Failed to fetch") even though the identical request succeeds
+        // moments later. Silently retry once before showing the guest a checkout error.
+        if ((!data || data.status !== 'OK') && networkLevelFailure) {
+          await new Promise(resolve => setTimeout(resolve, 700));
+          ({ data, networkErrorMessage, networkLevelFailure } = await attemptCheckoutOnce());
+        }
+
+        if (data && data.status === 'OK') {
+          const totalItemsCount = diningCart.reduce((sum, item) => sum + item.quantity, 0);
+          const grandTotal = diningCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+          const ticket = data.result?.ticket;
+          const ticketId = ticket ? (ticket.daily_number || ticket.id || '') : '';
+          const ticketNotice = ticketId ? ` Ticket #${ticketId} created (CASH).` : '';
+
+          closeCartModal();
+          playArrivalChime();
+          showTVToast(`🍽️ Order placed!${ticketNotice} ${totalItemsCount} items ($${grandTotal.toFixed(2)} AUD) sent to kitchen.`);
+
+          diningCart = [];
+          updateCartUI();
+
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalHtml;
+          }
+        } else {
+          const errMsg = data?.message || networkErrorMessage || 'The POS server was unable to process the order.';
+          console.error('[Demo Checkout API Error]:', errMsg, data);
+
+          if (errBox && errText) {
+            errText.textContent = `Checkout error: ${errMsg}`;
+            errBox.classList.remove('hidden');
+          }
+          showTVToast(`⚠️ Order submission failed: ${errMsg}`);
+
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalHtml;
+          }
+        }
+      } catch (err) {
+        console.error('[Demo Checkout Network Error]:', err);
+        const errMsg = err.message || 'Unable to reach the checkout server. Please check connection.';
+
+        if (errBox && errText) {
+          errText.textContent = `Network error: ${errMsg}`;
+          errBox.classList.remove('hidden');
+        }
+        showTVToast(`⚠️ Network error: ${errMsg}`);
+
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalHtml;
+        }
+      }
+    }
+
+    // =========================================================================
+    // INIT — open the dining menu immediately based on the URL's ?room=, without
+    // waiting for a check-in status check. A real SYSTEM_RESET event (MQTT /
+    // BroadcastChannel / storage, wired above) still flips this back to the
+    // "Awaiting Check-In" standby screen via applyPMSCheckinState as normal.
+    // =========================================================================
+    initCloudRelay();
+    setDiningMode(true);
+    refreshIcons();
+
+    // Register Service Worker for PWA (best-effort, matches other guest-facing pages)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
